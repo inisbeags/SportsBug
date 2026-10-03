@@ -57,3 +57,5 @@ SportsBug now uses the selected scoreboard bug icon (concept B), refined with ta
 Settings contains Check for updates, a GitHub repository field, and Automatically check for updates on launch. See GITHUB-SETUP.md for the one-time repository and installer build steps. This source ZIP is not yet a compiled installer.
 
 Favorites are grouped as Sport → League → Teams. Search includes team, sport and league and expands matching branches. Pending teams stay selectable and are labeled pending; selecting them does not enable an unavailable feed. See FEED-REVIEW.md for the required release coverage review.
+
+At 00:01 local time each day, SportsBug redraws date labels and requests a feed refresh. The existing 30-second clock checks the deadline and catches up after sleep. Date labels update even if a feed fails.

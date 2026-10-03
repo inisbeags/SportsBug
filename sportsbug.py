@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
 
 ROOT = Path.home() / "SportsBug"
 CONFIG = ROOT / "settings.json"
-VERSION = "0.2.1"
+VERSION = "0.2.2"
 EVENT_ROW_HEIGHT = 54
 DEFAULT = {"favorites": ["NFL:SEA", "MLB:136", "F1:all"], "spoilers": False,
            "revealed": [], "top": False, "snap": False, "opacity": 88,
@@ -1059,6 +1059,7 @@ class Bug(QWidget):
         self.events, self.errors, self.drag = [], [], None
         self.last_checked = None
         self.next_refresh_at = None
+        self.last_calendar_check = datetime.now().astimezone().date()
         self.diagnostics = None
         # Keep normal taskbar minimize/restore behavior with a borderless window.
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window |
@@ -1213,7 +1214,17 @@ class Bug(QWidget):
         self.worker.start()
 
     def check_refresh_clock(self, *args):
-        if self.next_refresh_at and datetime.now(timezone.utc) >= self.next_refresh_at:
+        now = datetime.now(timezone.utc)
+        local = now.astimezone()
+        calendar_due = (local.date() != self.last_calendar_check and
+                        (local.hour, local.minute) >= (0, 1))
+        if calendar_due:
+            self.last_calendar_check = local.date()
+            # Update local date labels immediately, even if a feed fails or a
+            # request is already running. The heartbeat also catches waking up
+            # after midnight; no continuously running network task is needed.
+            self.render()
+        if calendar_due or (self.next_refresh_at and now >= self.next_refresh_at):
             self.refresh()
 
     def updated(self, events, errors):
