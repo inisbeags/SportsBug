@@ -5,7 +5,7 @@ Before publishing each release, review all requested leagues, including feeds th
 Record the review date, version, source tested, upcoming/live/final examples, and remaining gaps in the GitHub release notes. Test an upcoming game within seven days and a recent result; when a live game is available, also check its status and score. Recheck failed feeds and retained results for duplicates and stale live status. If a new reliable source supplies only results, add that coverage without waiting for live tracking.
 
 Priority backlog:
-- NPB: Hanshin Tigers and Hiroshima Toyo Carp — source research remains open; no connected feed.
+- NPB: all 12 teams connected to the free Nippon Baseball Data Repository schedule release. Recheck upcoming and final rows; live tracking remains unverified.
 - NFL / college football: ESPN failures and fallback scores, especially Seattle, Cleveland, Washington, Arkansas and Central Washington.
 - Soccer: Sounders, Frontale, and US/Japan senior men, including cup/friendly results and shootouts.
 - Cricket: Seattle Orcas — pending.
@@ -22,3 +22,11 @@ Release note template:
 - Newly supported sports/teams:
 - Pending sources / failures:
 - Checks not possible this release:
+
+## v0.2.1 review — 2026-10-03
+
+- Downloaded and parsed the 2026 release CSV from https://github.com/armstjc/Nippon-Baseball-Data-Repository/releases/tag/schedule.
+- Confirmed October 1 Hanshin–Yomiuri 2–2 and Hiroshima–Chunichi 5–1; October 3 Hiroshima–Hanshin scheduled for 14:00 JST.
+- Tested all 12 club IDs, preserved favorite migration, score order, wins/losses/ties, blank upcoming scores, cancelled games, shared followed-team rows, and suppression of upcoming games during the unconfirmed match window.
+- Source update cadence and live tracking not verified. No live scores are claimed.
+- Python compilation passed. Windows UI, installer upgrade and other network feeds require user testing; no new coverage is claimed for other pending leagues.

@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
 
 ROOT = Path.home() / "SportsBug"
 CONFIG = ROOT / "settings.json"
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 EVENT_ROW_HEIGHT = 54
 DEFAULT = {"favorites": ["NFL:SEA", "MLB:136", "F1:all"], "spoilers": False,
            "revealed": [], "top": False, "snap": False, "opacity": 88,
@@ -40,8 +40,19 @@ for league, label in (("CFB", "football"), ("CBB", "basketball"), ("CBASE", "bas
     for school, name in (("WASH", "Washington Huskies"), ("ARK", "Arkansas Razorbacks")):
         CATALOG[league + ":" + school] = name + " · college " + label
 CATALOG["F1:all"] = "Formula 1 events"
-for school, name in (("Hanshin Tigers", "Hanshin Tigers"), ("Hiroshima Carp", "Hiroshima Toyo Carp")):
-    CATALOG["PENDING:" + school] = name + " · NPB (feed pending)"
+# Stable team IDs from the Nippon Baseball Data Repository's schedule dataset.
+NPB_TEAMS = {
+    "1": "Yomiuri Giants", "2": "Tokyo Yakult Swallows", "3": "Yokohama DeNA BayStars",
+    "4": "Chunichi Dragons", "5": "Hanshin Tigers", "6": "Hiroshima Toyo Carp",
+    "7": "Saitama Seibu Lions", "8": "Hokkaido Nippon-Ham Fighters",
+    "9": "Chiba Lotte Marines", "11": "Orix Buffaloes",
+    "12": "Fukuoka SoftBank Hawks", "376": "Tohoku Rakuten Golden Eagles",
+}
+NPB_CODES = dict(zip(NPB_TEAMS, "YG YS DB CD HT HC SL NF LM OB SH RE".split()))
+NPB_REPOSITORY = "https://github.com/armstjc/Nippon-Baseball-Data-Repository"
+NPB_MIGRATION = {"PENDING:Hanshin Tigers": "NPB:5", "PENDING:Hiroshima Carp": "NPB:6"}
+for code, name in NPB_TEAMS.items():
+    CATALOG["NPB:" + code] = name
 for league, label in (("football", "football"), ("basketball", "basketball"), ("baseball", "baseball")):
     if league != "football":
         CATALOG["PENDING:CWU-" + league] = "Central Washington University · " + label + " (feed pending)"
@@ -62,7 +73,7 @@ def catalog_group(key):
     prefix, team = key.split(":", 1)
     groups = {
         "NFL": ("Football", "NFL"), "CFB": ("Football", "College football"),
-        "MLB": ("Baseball", "MLB"), "CBASE": ("Baseball", "College baseball"),
+        "NPB": ("Baseball", "NPB"), "MLB": ("Baseball", "MLB"), "CBASE": ("Baseball", "College baseball"),
         "NHL": ("Hockey", "NHL"), "CBB": ("Basketball", "College basketball"),
         "MLS": ("Soccer", "MLS"), "J1": ("Soccer", "J.League"),
         "NTSOC": ("Soccer", "Senior national teams"),
@@ -121,9 +132,13 @@ def load():
             settings["favorites"] = list(dict.fromkeys(settings["favorites"]))
             settings["favorites_seeded_v6"] = True
             save(settings)
+        migrated = list(dict.fromkeys(NPB_MIGRATION.get(key, key) for key in settings["favorites"]))
+        if migrated != settings["favorites"]:
+            settings["favorites"] = migrated
+            save(settings)
         return settings
     except (OSError, ValueError):
-        return {**DEFAULT, "favorites": DEFAULT["favorites"] + ["CFB:CWU" if key == "PENDING:CWU-football" else key for key in STARTING_FAVORITES]
+        return {**DEFAULT, "favorites": DEFAULT["favorites"] + [NPB_MIGRATION.get(key, "CFB:CWU" if key == "PENDING:CWU-football" else key) for key in STARTING_FAVORITES]
                 + NEW_FAVORITES + NATIONAL_FAVORITES + ["MLR:142080"],
                 "favorites_seeded_v2": True, "favorites_seeded_v3": True, "favorites_seeded_v4": True,
                 "favorites_seeded_v5": True, "favorites_seeded_v6": True}
@@ -272,6 +287,8 @@ def followed_result(event):
                "CFB:CWU": ("CWU", "CWASH", "C WASH", "CENTWA", "Central Wash")}
     if favorite in aliases:
         names = aliases[favorite]
+    elif league == "NPB":
+        names = (NPB_CODES.get(code, ""),)
     elif league == "MLB":
         names = (MLB_CODES.get(code, ""),)
     elif league in ("NFL", "NHL", "CFB", "CBB", "CBASE"):
@@ -772,6 +789,54 @@ def f1_schedule(favorites, now=None):
                                "Scheduled session" if running else "Scheduled", teams=["F1:all"]))
     return result
 
+def parse_npb_schedule(text, favorites, now=None):
+    """Read release CSV; finals require the source's completed state and scores."""
+    now = now or datetime.now(timezone.utc)
+    rows = csv.DictReader(io.StringIO(text.lstrip("\ufeff")))
+    required = {"game_id", "game_date", "game_state", "home_team_id", "away_team_id",
+                "home_score", "away_score"}
+    if not required.issubset(rows.fieldnames or ()):
+        raise ValueError("NPB schedule format changed")
+    result = []
+    for row in rows:
+        home, away = row["home_team_id"], row["away_team_id"]
+        if home not in NPB_TEAMS or away not in NPB_TEAMS:
+            continue  # All-star and undecided playoff teams are not selectable clubs.
+        teams = [key for key in ("NPB:" + away, "NPB:" + home) if key in favorites]
+        if not teams or row["game_state"] not in ("1", "2", "3"):
+            continue  # Cancelled games (state 4) must not appear as upcoming or final.
+        try:
+            when = iso(row["game_date"])
+        except ValueError:
+            continue
+        if when.tzinfo is None:
+            continue
+        if not now - timedelta(days=4) <= when <= now + timedelta(days=7):
+            continue
+        a, b = score_text(row["away_score"]), score_text(row["home_score"])
+        if row["game_state"] == "2" and a != "" and b != "":
+            state, status = "post", "FINAL"
+        elif when > now and row["game_state"] == "1":
+            state, status = "pre", "Scheduled"
+            a = b = ""
+        elif when <= now < when + timedelta(hours=8):
+            # This periodically published dataset is not a verified live feed.
+            state, status = "window", "Match window · awaiting result"
+            a = b = ""
+        else:
+            continue
+        result.append(item("NPB:" + row["game_id"], "NPB", NPB_CODES[away], NPB_CODES[home],
+                           when, state, status, a, b, teams))
+    return result
+
+
+def npb_schedule(favorites):
+    year = (datetime.now(timezone.utc) + timedelta(hours=9)).year
+    # The maintainer updates release assets; committed files may be historical.
+    url = NPB_REPOSITORY + "/releases/download/schedule/" + str(year) + "_npb_schedule.csv"
+    return parse_npb_schedule(get_text(url), favorites)
+
+
 class Fetcher(QThread):
     complete = Signal(list, list)
     def __init__(self, favorites):
@@ -787,6 +852,8 @@ class Fetcher(QThread):
             jobs["NFL-schedule"] = lambda: nfl_schedule(self.favorites)
         if any(f.startswith("NHL:") for f in self.favorites):
             jobs["NHL"] = lambda: nhl(self.favorites)
+        if any(f.startswith("NPB:") for f in self.favorites):
+            jobs["NPB"] = lambda: npb_schedule(self.favorites)
         if "MLR:142080" in self.favorites:
             jobs["MLR"] = lambda: seawolves(self.favorites)
         if "F1:all" in self.favorites:
@@ -1207,7 +1274,7 @@ class Bug(QWidget):
                 if event["key"] not in finals and event["key"] not in old:
                     # Feeds rarely include a finish timestamp. For finals first seen
                     # after a restart, estimate it from the scheduled start.
-                    hours = {"MLB": 3, "NFL": 3.5, "NHL": 2.5}.get(event["league"], 2)
+                    hours = {"MLB": 3, "NPB": 3, "NFL": 3.5, "NHL": 2.5}.get(event["league"], 2)
                     ended = stamp if event["key"] in seen else min(stamp, (event["when"] + timedelta(hours=hours)).timestamp())
                     if 0 <= stamp - ended < 3 * 86400:
                         snapshot = {**event, "when": event["when"].isoformat()}
@@ -1473,6 +1540,12 @@ class Bug(QWidget):
         self.update_status_label = QLabel(getattr(self, "update_status", ""))
         self.update_status_label.setWordWrap(True)
         layout.addWidget(self.update_status_label)
+        attribution = QLabel("This uses data sourced from the Nippon Baseball Data Repository, "
+                             'which can be accessed <a href="' + NPB_REPOSITORY + '">here</a>.<br>'
+                             "NPB: schedules and published results; live tracking unverified.")
+        attribution.setWordWrap(True)
+        attribution.setOpenExternalLinks(True)
+        layout.addWidget(attribution)
         layout.addWidget(QLabel("Feed status"))
         self.diagnostics = QPlainTextEdit()
         self.diagnostics.setReadOnly(True)
