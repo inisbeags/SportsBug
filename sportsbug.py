@@ -20,11 +20,11 @@ from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
 
 ROOT = Path.home() / "SportsBug"
 CONFIG = ROOT / "settings.json"
-VERSION = "0.2.2"
+VERSION = "0.2.3"
 EVENT_ROW_HEIGHT = 54
 DEFAULT = {"favorites": ["NFL:SEA", "MLB:136", "F1:all"], "spoilers": False,
            "revealed": [], "top": False, "snap": False, "opacity": 88,
-           "check_updates_on_launch": True, "update_repository": "", "background_color": "#141b27", "expanded": False, "x": 100, "y": 100, "completed": {}, "seen_live": {}}
+           "check_updates_on_launch": True, "update_repository": "", "background_color": "#0b1c2f", "expanded": False, "x": 100, "y": 100, "completed": {}, "seen_live": {}}
 NFL_TEAMS = "Arizona Cardinals|ARI;Atlanta Falcons|ATL;Baltimore Ravens|BAL;Buffalo Bills|BUF;Carolina Panthers|CAR;Chicago Bears|CHI;Cincinnati Bengals|CIN;Cleveland Browns|CLE;Dallas Cowboys|DAL;Denver Broncos|DEN;Detroit Lions|DET;Green Bay Packers|GB;Houston Texans|HOU;Indianapolis Colts|IND;Jacksonville Jaguars|JAX;Kansas City Chiefs|KC;Las Vegas Raiders|LV;Los Angeles Chargers|LAC;Los Angeles Rams|LAR;Miami Dolphins|MIA;Minnesota Vikings|MIN;New England Patriots|NE;New Orleans Saints|NO;New York Giants|NYG;New York Jets|NYJ;Philadelphia Eagles|PHI;Pittsburgh Steelers|PIT;San Francisco 49ers|SF;Seattle Seahawks|SEA;Tampa Bay Buccaneers|TB;Tennessee Titans|TEN;Washington Commanders|WSH"
 NHL_TEAMS = "Anaheim Ducks|ANA;Boston Bruins|BOS;Buffalo Sabres|BUF;Calgary Flames|CGY;Carolina Hurricanes|CAR;Chicago Blackhawks|CHI;Colorado Avalanche|COL;Columbus Blue Jackets|CBJ;Dallas Stars|DAL;Detroit Red Wings|DET;Edmonton Oilers|EDM;Florida Panthers|FLA;Los Angeles Kings|LA;Minnesota Wild|MIN;Montreal Canadiens|MTL;Nashville Predators|NSH;New Jersey Devils|NJ;New York Islanders|NYI;New York Rangers|NYR;Ottawa Senators|OTT;Philadelphia Flyers|PHI;Pittsburgh Penguins|PIT;San Jose Sharks|SJ;Seattle Kraken|SEA;St. Louis Blues|STL;Tampa Bay Lightning|TB;Toronto Maple Leafs|TOR;Utah Mammoth|UTA;Vancouver Canucks|VAN;Vegas Golden Knights|VGK;Washington Capitals|WSH;Winnipeg Jets|WPG"
 MLB_TEAMS = "Arizona Diamondbacks|109;Atlanta Braves|144;Baltimore Orioles|110;Boston Red Sox|111;Chicago Cubs|112;Chicago White Sox|145;Cincinnati Reds|113;Cleveland Guardians|114;Colorado Rockies|115;Detroit Tigers|116;Houston Astros|117;Kansas City Royals|118;Los Angeles Angels|108;Los Angeles Dodgers|119;Miami Marlins|146;Milwaukee Brewers|158;Minnesota Twins|142;New York Mets|121;New York Yankees|147;Athletics|133;Philadelphia Phillies|143;Pittsburgh Pirates|134;San Diego Padres|135;San Francisco Giants|137;Seattle Mariners|136;St. Louis Cardinals|138;Tampa Bay Rays|139;Texas Rangers|140;Toronto Blue Jays|141;Washington Nationals|120"
@@ -132,6 +132,10 @@ def load():
             settings["favorites"] = list(dict.fromkeys(settings["favorites"]))
             settings["favorites_seeded_v6"] = True
             save(settings)
+        if not settings.get("palette_v1"):
+            settings["background_color"] = "#0b1c2f"
+            settings["palette_v1"] = True
+            save(settings)
         migrated = list(dict.fromkeys(NPB_MIGRATION.get(key, key) for key in settings["favorites"]))
         if migrated != settings["favorites"]:
             settings["favorites"] = migrated
@@ -141,7 +145,7 @@ def load():
         return {**DEFAULT, "favorites": DEFAULT["favorites"] + [NPB_MIGRATION.get(key, "CFB:CWU" if key == "PENDING:CWU-football" else key) for key in STARTING_FAVORITES]
                 + NEW_FAVORITES + NATIONAL_FAVORITES + ["MLR:142080"],
                 "favorites_seeded_v2": True, "favorites_seeded_v3": True, "favorites_seeded_v4": True,
-                "favorites_seeded_v5": True, "favorites_seeded_v6": True}
+                "favorites_seeded_v5": True, "favorites_seeded_v6": True, "palette_v1": True}
 
 def save(settings):
     ROOT.mkdir(exist_ok=True)
@@ -1098,6 +1102,7 @@ class Bug(QWidget):
         gear.clicked.connect(self.options)
         header.addWidget(gear)
         self.expand = QPushButton("⌄")
+        self.expand.setToolTip("Show individual reveal buttons while spoiler mode is on")
         self.expand.clicked.connect(self.toggle_expand)
         header.addWidget(self.expand)
         for button in (self.reload, self.spoil, self.top_button, gear, self.expand):
@@ -1329,9 +1334,9 @@ class Bug(QWidget):
         self.top_button.setAccessibleName("Always on top")
         self.expand.setText("⌃" if s["expanded"] else "⌄")
         alpha = round(s["opacity"] * 2.55)
-        background = QColor(s.get("background_color", "#141b27"))
+        background = QColor(s.get("background_color", "#0b1c2f"))
         if not background.isValid():
-            background = QColor("#141b27")
+            background = QColor("#0b1c2f")
         self.panel.setStyleSheet("QWidget {background: transparent; color:#f3f6fb; font: 12px 'Segoe UI';}"
           "QWidget#panel {background: rgba(%d,%d,%d,%d); border: 1px solid #404b5b; border-radius: 16px;}" % (background.red(), background.green(), background.blue(), alpha)
           + "QPushButton {border:0; background:transparent; color:#c9d5e9; font-size:18px; padding:2px 5px;}"
@@ -1362,16 +1367,18 @@ class Bug(QWidget):
             row.addWidget(label, 1)
             if outcome:
                 badge.setStyleSheet({
-                    "WIN": "color:#8ce7b2; background-color:#1d4338;",
-                    "LOSS": "color:#ffaaa6; background-color:#573335;",
-                    "DRAW": "color:#c7d1df; background-color:#394455;",
+                    "WIN": "color:#3af888; background-color:#0f243c;",
+                    "LOSS": "color:#ffaaa6; background-color:#0f243c;",
+                    "DRAW": "color:#c7d1df; background-color:#0f243c;",
                 }[outcome] + "border-radius:4px; font-size:9px; font-weight:700; padding:3px 0;")
             detail = FittingLabel(event_detail(event, hidden, now))
-            detail.setFixedWidth(112)
+            detail.setFixedWidth(140 if event["state"] == "pre" else 112)
             detail.setWordWrap(True)
             detail.setToolTip("" if hidden else ("Final · score unavailable" if event["state"] == "post" and (event["a"] == "" or event["b"] == "") else event["status"]))
             self.context_menu_on(detail)
-            if event["state"] == "in":
+            if event["state"] == "pre" and event["when"].astimezone().date() > now.astimezone().date():
+                detail.set_text_style("color: #9aacc3;")
+            elif event["state"] == "in":
                 detail.set_text_style("color: #55d994; font-weight: 700;")
             elif event["state"] == "post" and not hidden:
                 detail.set_text_style("color: #f6c877; font-weight: 700;")
@@ -1382,7 +1389,8 @@ class Bug(QWidget):
                 eye.setToolTip("Reveal this event" if hidden else "Hide this event")
                 eye.clicked.connect(lambda checked=False, key=event["key"]: self.toggle_event(key))
                 row.addWidget(eye)
-            row.addWidget(badge, 0, Qt.AlignVCenter)
+            if event["state"] != "pre":
+                row.addWidget(badge, 0, Qt.AlignVCenter)
             self.body.addWidget(line)
         if not events:
             empty = QLabel("No favorites playing in the next 7 days.")
